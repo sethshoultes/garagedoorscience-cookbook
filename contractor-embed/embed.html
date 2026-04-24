@@ -196,13 +196,21 @@ function renderIssue(issue, urgency) {
 
 function render(results, container) {
   container.replaceChildren();
-  if (!results.issues || results.issues.length === 0) {
+  const issues = results.likelyIssues || [];
+  const urgency = results.symptom && results.symptom.urgency;
+  if (issues.length === 0) {
     const hint = results.hint || 'No exact match yet — try describing what you see or hear, or what the door is doing.';
     container.appendChild(el('div', { class: 'gds-nomatch', text: hint }));
     return;
   }
-  for (const issue of results.issues) {
-    container.appendChild(renderIssue(issue, results.urgency));
+  if (results.safetyFlag) {
+    container.appendChild(el('div', { class: 'safety' },
+      el('strong', { text: 'Safety: ' }),
+      'This looks like something that needs a pro. Do not attempt to repair stored-energy components (springs, cables) yourself.'
+    ));
+  }
+  for (var i = 0; i < issues.length; i++) {
+    container.appendChild(renderIssue(issues[i], urgency));
   }
 }
 
