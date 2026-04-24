@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Garage Door Diagnostic — Minimal Widget</title>
+<style>
+  :root {
+    --accent: #d4541a;
+    --accent-hover: #b8471a;
+    --text: #1a1a18;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --surface: #fff;
+    --danger: #c0392b;
+    --danger-bg: #fee;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    margin: 0;
+    padding: 2rem 1rem;
+    background: #fafafa;
+    color: var(--text);
+    line-height: 1.55;
+  }
+  .gds-widget {
+    max-width: 560px;
+    margin: 2rem auto;
+    padding: 2rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .gds-widget h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1.5rem;
+    letter-spacing: -0.01em;
+  }
+  .gds-widget p.lede {
+    margin: 0 0 1.25rem;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .gds-widget textarea {
+    width: 100%;
+    min-height: 80px;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 1rem;
+    resize: vertical;
+  }
+  .gds-widget textarea:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    border-color: transparent;
+  }
+  .gds-widget button {
+    margin-top: 0.75rem;
+    padding: 0.65rem 1.25rem;
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .gds-widget button:hover { background: var(--accent-hover); }
+  .gds-widget button:disabled { opacity: 0.6; cursor: not-allowed; }
+  .gds-results { margin-top: 1.5rem; }
+  .gds-issue {
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 0.75rem;
+    background: #fafafa;
+  }
+  .gds-issue h3 {
+    margin: 0 0 0.35rem;
+    font-size: 1.05rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .gds-issue .meta {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin: 0.25rem 0 0.5rem;
+  }
+  .gds-issue p { margin: 0.5rem 0; font-size: 0.95rem; }
+  .gds-issue .unsafe {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    background: var(--danger-bg);
+    color: var(--danger);
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .gds-issue .safety {
+    margin-top: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--danger-bg);
+    border-left: 3px solid var(--danger);
+    border-radius: 4px;
+    font-size: 0.9rem;
+  }
+  .gds-nomatch {
+    padding: 1rem;
+    background: #fafafa;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .gds-footer {
+    margin-top: 1.5rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-align: center;
+  }
+  .gds-footer a { color: inherit; text-decoration: underline; text-decoration-color: var(--border); }
+  .gds-footer a:hover { color: var(--accent); text-decoration-color: currentColor; }
+</style>
+</head>
+<body>
+
+<div class="gds-widget">
+  <h2>Diagnose your garage door</h2>
+  <p class="lede">Describe what's happening. We'll show the likely causes, cost ranges, and whether it's safe to DIY.</p>
+  <textarea id="gds-input" placeholder="My door opens fine but won't close all the way. Sometimes it reverses when it gets near the ground."></textarea>
+  <button id="gds-submit">Diagnose</button>
+  <div id="gds-results" class="gds-results"></div>
+  <p class="gds-footer">Powered by <a href="https://garagedoorscience.com" target="_blank" rel="noopener">garagedoorscience.com</a></p>
+</div>
+
+<script>
+const GDS_API = 'https://garagedoorscience.com/api/v1';
+
+async function diagnose(description) {
+  const res = await fetch(GDS_API + '/diagnose', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description }),
+  });
+  if (!res.ok) throw new Error('API error: ' + res.status);
+  return res.json();
+}
+
+// Safe DOM builders — no innerHTML on untrusted content.
+function el(tag, props, ...children) {
+  const node = document.createElement(tag);
+  if (props) {
+    for (const [k, v] of Object.entries(props)) {
+      if (k === 'class') node.className = v;
+      else if (k === 'text') node.textContent = v;
+      else node.setAttribute(k, v);
+    }
+  }
+  for (const child of children) {
+    if (child == null) continue;
+    if (typeof child === 'string') node.appendChild(document.createTextNode(child));
+    else node.appendChild(child);
+  }
+  return node;
+}
+
+function renderIssue(issue, urgency) {
+  const unsafe = issue.diyRisk === 'unsafe';
+  const heading = el('h3', null, issue.name || 'Issue');
+  if (unsafe) heading.appendChild(el('span', { class: 'unsafe', text: 'Call a pro' }));
+
+  const min = issue.costRange && issue.costRange.min;
+  const max = issue.costRange && issue.costRange.max;
+  const metaText = 'Typical cost: $' + min + '–$' + max + ' · Urgency: ' + (urgency || 'routine');
+  const meta = el('p', { class: 'meta', text: metaText });
+
+  const desc = el('p', { text: issue.description || '' });
+
+  const children = [heading, meta, desc];
+  if (issue.safetyNote) {
+    const safety = el('div', { class: 'safety' },
+      el('strong', { text: 'Safety note: ' }),
+      issue.safetyNote);
+    children.push(safety);
+  }
+  return el('div', { class: 'gds-issue' }, ...children);
+}
+
+function render(results, container) {
+  container.replaceChildren();
+  if (!results.issues || results.issues.length === 0) {
+    const hint = results.hint || 'No exact match yet — try describing what you see or hear, or what the door is doing.';
+    container.appendChild(el('div', { class: 'gds-nomatch', text: hint }));
+    return;
+  }
+  for (const issue of results.issues) {
+    container.appendChild(renderIssue(issue, results.urgency));
+  }
+}
+
+const btn = document.getElementById('gds-submit');
+const input = document.getElementById('gds-input');
+const results = document.getElementById('gds-results');
+
+btn.addEventListener('click', async () => {
+  const desc = input.value.trim();
+  if (!desc) return;
+  btn.disabled = true;
+  btn.textContent = 'Thinking…';
+  results.replaceChildren();
+  try {
+    const data = await diagnose(desc);
+    render(data, results);
+  } catch (err) {
+    results.replaceChildren(el('div', { class: 'gds-nomatch', text: 'Something went wrong. Try again in a moment.' }));
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Diagnose';
+  }
+});
+
+input.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') btn.click();
+});
+</script>
+
+</body>
+</html>
