@@ -13,6 +13,15 @@ Each recipe shows one way to call the platform's eight tools (`diagnose`, `route
 | [`langchain-agent/`](./langchain-agent) | Python LangChain agent calling the REST API | Agent frameworks that import OpenAPI (LangChain, LlamaIndex) |
 | [`contractor-embed/`](./contractor-embed) | Minimal HTML/JS widget embeddable on a contractor's site | Garage-door companies wanting AI diagnostics on their own website |
 
+## Official packages (separate repos)
+
+Beyond the copy-paste cookbook, two installable packages ship the most common integrations as ready-to-use plugins:
+
+| Package | What it does | Install |
+|---|---|---|
+| [**wp-garagedoorscience**](https://github.com/sethshoultes/wp-garagedoorscience) | WordPress plugin — adds a `[gds-diagnose]` shortcode for any page | WP admin upload, or clone + zip |
+| [**garagedoorscience-claude-plugin**](https://github.com/sethshoultes/garagedoorscience-claude-plugin) | Claude Code plugin — `diagnose-garage-door` skill + MCP connector | `git clone` into `~/.claude/plugins/` |
+
 ## What the platform exposes
 
 - **MCP endpoint** (no auth, 60/min, 2000/day): `https://garagedoorscience.com/mcp`
