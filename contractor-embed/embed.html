@@ -42,6 +42,7 @@
     color: var(--muted);
     font-size: 0.95rem;
   }
+
   /* --- chip mode --- */
   .gds-chips {
     display: flex;
@@ -80,6 +81,7 @@
     font-family: inherit;
   }
   .gds-toggle:hover { text-decoration-color: currentColor; }
+
   /* --- text mode --- */
   .gds-widget textarea {
     width: 100%;
@@ -110,6 +112,7 @@
   }
   .gds-widget button.gds-submit:hover { background: var(--accent-hover); }
   .gds-widget button.gds-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+
   /* --- results --- */
   .gds-results { margin-top: 1.5rem; }
   .gds-issue {
@@ -164,6 +167,86 @@
     color: var(--muted);
     font-size: 0.95rem;
   }
+
+  /* --- partner lookup --- */
+  .gds-partner-lookup {
+    margin-top: 1.25rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border);
+  }
+  .gds-partner-lookup h3 {
+    margin: 0 0 0.35rem;
+    font-size: 1.05rem;
+  }
+  .gds-zip-form {
+    display: flex;
+    gap: 0.5rem;
+    margin: 0.5rem 0 0.75rem;
+    flex-wrap: wrap;
+  }
+  .gds-zip-input {
+    flex: 1;
+    min-width: 120px;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 1rem;
+    background: #fff;
+  }
+  .gds-zip-input:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    border-color: transparent;
+  }
+  .gds-zip-submit {
+    padding: 0.55rem 1.1rem;
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s;
+  }
+  .gds-zip-submit:hover { background: var(--accent-hover); }
+  .gds-zip-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+  .gds-partner {
+    margin-top: 0.5rem;
+    padding: 1rem;
+    background: #fafafa;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .gds-partner h4 {
+    margin: 0 0 0.25rem;
+    font-size: 1rem;
+  }
+  .gds-partner p {
+    margin: 0.25rem 0;
+    font-size: 0.92rem;
+  }
+  .gds-partner a { color: var(--accent); }
+  .gds-cta {
+    display: inline-block;
+    margin-top: 0.6rem;
+    padding: 0.55rem 1.1rem;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.92rem;
+    transition: background 0.15s;
+  }
+  .gds-cta:hover {
+    background: var(--accent-hover);
+    color: #fff;
+    text-decoration: none;
+  }
+
   .gds-footer {
     margin-top: 1.5rem;
     font-size: 0.8rem;
@@ -204,9 +287,6 @@
 <script>
 const GDS_API = 'https://garagedoorscience.com/api/v1';
 
-// Common symptoms, keyed to the canonical alias in the diagnostic tree.
-// If the server-side tree changes, update this list. For v0.1 we hardcode
-// rather than fetch on load — one less API round-trip, faster first paint.
 const SYMPTOMS = [
   { key: 'wont_open',            label: "Won't open",              phrase: "won't open" },
   { key: 'wont_close',           label: "Won't close",             phrase: "won't close" },
@@ -219,11 +299,25 @@ const SYMPTOMS = [
   { key: 'weather_seal_damaged', label: 'Weather seal damaged',    phrase: 'weather seal damaged' },
 ];
 
-async function diagnose(description) {
+async function diagnose(description, useLlmFallback) {
+  const body = { description };
+  if (useLlmFallback) body.useLlmFallback = true;
   const res = await fetch(GDS_API + '/diagnose', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ description }),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error('API error: ' + res.status);
+  return res.json();
+}
+
+async function routeByZip(zip, issue, leadHeat) {
+  const body = { zipOrLocation: zip, leadHeat: leadHeat || 'warm' };
+  if (issue) body.issue = issue;
+  const res = await fetch(GDS_API + '/routeByZip', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error('API error: ' + res.status);
   return res.json();
@@ -266,24 +360,118 @@ function renderIssue(issue, urgency) {
   return node;
 }
 
+function renderPartner(resp, container) {
+  if (!resp || !resp.covered) {
+    container.replaceChildren(
+      el('div', { class: 'gds-nomatch' },
+        "We don't have a vetted partner in that ZIP yet. Try a nearby ZIP or city."
+      )
+    );
+    return;
+  }
+  const p = resp.partner || {};
+  const card = el('div', { class: 'gds-partner' });
+  card.appendChild(el('h4', { text: p.displayName || 'Local pro' }));
+  if (resp.region) {
+    card.appendChild(el('p', { class: 'meta', text: 'Covers: ' + resp.region }));
+  }
+  if (p.phone) {
+    card.appendChild(el('p', null,
+      el('strong', { text: 'Phone: ' }),
+      el('a', { href: 'tel:' + p.phone }, p.phone)
+    ));
+  }
+  const ctaHref = p.schedulerUrl || p.url;
+  if (ctaHref) {
+    card.appendChild(el('a', {
+      href: ctaHref,
+      class: 'gds-cta',
+      target: '_blank',
+      rel: 'noopener'
+    }, p.schedulerUrl ? 'Schedule →' : 'Visit site →'));
+  }
+  container.replaceChildren(card);
+}
+
+function buildZipLookup(issueKey, safetyFlag) {
+  const section = el('div', { class: 'gds-partner-lookup' });
+  const heading = el('h3', { text: safetyFlag ? 'Get urgent help nearby' : 'Find a local pro' });
+  const lede = el('p', {
+    class: 'lede',
+    text: safetyFlag
+      ? 'Enter your ZIP code to reach a pro fast. Do not operate the door in the meantime.'
+      : 'Enter your ZIP code to find a trusted pro near you.'
+  });
+  const form = el('div', { class: 'gds-zip-form' });
+  const input = el('input', {
+    type: 'text',
+    class: 'gds-zip-input',
+    placeholder: 'ZIP',
+    inputmode: 'numeric',
+    pattern: '[0-9]{5}',
+    maxlength: '5',
+    'aria-label': 'ZIP code',
+  });
+  const submitBtn = el('button', { type: 'button', class: 'gds-zip-submit' }, 'Find pro');
+  const resultBox = el('div', { class: 'gds-partner-result' });
+
+  async function submitZip() {
+    const zip = (input.value || '').trim();
+    if (!/^\d{5}$/.test(zip)) {
+      resultBox.replaceChildren(el('div', { class: 'gds-nomatch', text: 'Please enter a 5-digit ZIP code.' }));
+      return;
+    }
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Finding…';
+    resultBox.replaceChildren();
+    try {
+      const data = await routeByZip(zip, issueKey, safetyFlag ? 'hot' : 'warm');
+      renderPartner(data, resultBox);
+    } catch (err) {
+      resultBox.replaceChildren(el('div', { class: 'gds-nomatch', text: 'Something went wrong. Try again.' }));
+      console.error(err);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Find pro';
+    }
+  }
+
+  submitBtn.addEventListener('click', submitZip);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitZip(); });
+
+  form.appendChild(input);
+  form.appendChild(submitBtn);
+  section.appendChild(heading);
+  section.appendChild(lede);
+  section.appendChild(form);
+  section.appendChild(resultBox);
+  return section;
+}
+
 function render(results, container) {
   container.replaceChildren();
   const issues = results.likelyIssues || [];
   const urgency = results.symptom && results.symptom.urgency;
+
   if (issues.length === 0) {
-    const hint = results.hint || 'No exact match yet — try picking a symptom above or phrase it differently.';
+    const hint = results.hint || 'No exact match — try a different symptom or phrase.';
     container.appendChild(el('div', { class: 'gds-nomatch', text: hint }));
     return;
   }
+
   if (results.safetyFlag) {
     container.appendChild(el('div', { class: 'safety-banner' },
       el('strong', { text: 'Safety: ' }),
       'This looks like something that needs a pro. Do not attempt to repair stored-energy components (springs, cables) yourself.'
     ));
   }
+
   for (let i = 0; i < issues.length; i++) {
     container.appendChild(renderIssue(issues[i], urgency));
   }
+
+  const symptomKey = results.symptom && results.symptom.key;
+  container.appendChild(buildZipLookup(symptomKey, !!results.safetyFlag));
 }
 
 const chipsContainer = document.querySelector('.gds-chips');
@@ -293,12 +481,30 @@ const input = document.querySelector('.gds-input');
 const submitBtn = document.querySelector('.gds-submit');
 const results = document.getElementById('gds-results');
 
+async function submit(description, useLlmFallback, activeBtn, originalLabel) {
+  activeBtn.disabled = true;
+  activeBtn.textContent = 'Thinking…';
+  results.replaceChildren();
+  try {
+    const data = await diagnose(description, useLlmFallback);
+    render(data, results);
+  } catch (err) {
+    results.replaceChildren(el('div', { class: 'gds-nomatch', text: 'Something went wrong. Try again in a moment.' }));
+    console.error(err);
+  } finally {
+    activeBtn.disabled = false;
+    activeBtn.textContent = originalLabel;
+  }
+}
+
+// Chip mode — no LLM fallback; canonical phrase always matches
 for (const s of SYMPTOMS) {
   const btn = el('button', { type: 'button', class: 'gds-chip', 'data-key': s.key }, s.label);
-  btn.addEventListener('click', () => submit(s.phrase, btn, s.label));
+  btn.addEventListener('click', () => submit(s.phrase, false, btn, s.label));
   chipsContainer.appendChild(btn);
 }
 
+// Toggle between modes
 for (const toggle of document.querySelectorAll('.gds-toggle')) {
   toggle.addEventListener('click', () => {
     const target = toggle.getAttribute('data-gds-target');
@@ -309,31 +515,16 @@ for (const toggle of document.querySelectorAll('.gds-toggle')) {
   });
 }
 
+// Text-mode submit — opts into LLM fallback for colloquial phrasing
 submitBtn.addEventListener('click', () => {
   const desc = input.value.trim();
   if (!desc) return;
-  submit(desc, submitBtn, 'Diagnose');
+  submit(desc, true, submitBtn, 'Diagnose');
 });
 
 input.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submitBtn.click();
 });
-
-async function submit(description, activeBtn, originalLabel) {
-  activeBtn.disabled = true;
-  activeBtn.textContent = 'Thinking…';
-  results.replaceChildren();
-  try {
-    const data = await diagnose(description);
-    render(data, results);
-  } catch (err) {
-    results.replaceChildren(el('div', { class: 'gds-nomatch', text: 'Something went wrong. Try again in a moment.' }));
-    console.error(err);
-  } finally {
-    activeBtn.disabled = false;
-    activeBtn.textContent = originalLabel;
-  }
-}
 </script>
 
 </body>
