@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "garagedoorscience": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://garagedoorscience.com/mcp"
+      ]
+    },
+    "garagedoorscience-pro": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://garagedoorscience.com/mcp-pro",
+        "--header",
+        "Authorization: Bearer gds_live_YOUR_KEY_HERE"
+      ]
+    }
+  }
+}
